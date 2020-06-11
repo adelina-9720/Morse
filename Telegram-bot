@@ -1,0 +1,143 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <Bridge.h>
+#include <HttpClient.h>
+#include <ArduinoJson.h>
+
+const char *host = "64.227.63.33";
+const String url_send = "/sendMessage";
+const String url_getUpdates = "/getMessages";
+
+char *ssid = "***";
+char *password = "***";
+
+WiFiClient client;
+  DynamicJsonDocument doc(64000);
+
+void setup()
+{
+  client.setTimeout(10000);
+
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  if (WiFi.waitForConnectResult() != WL_CONNECTED)
+  {
+    Serial.printf("WiFi Failed!\n");
+    return;
+  }
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void getMessages(String offset)
+{
+  if (!client.connect(host, 3000))
+  {
+    Serial.println(F("Connection failed"));
+    return;
+  }
+
+  Serial.println(F("Connected!"));
+
+  // Send HTTP request
+  String url_line = "GET " + url_getUpdates +"?offset=" + offset + " HTTP/1.0";
+  Serial.println(url_line);
+  client.println(url_line);
+  client.println(F("Host: 64.227.63.33"));
+  client.println(F("Connection: close"));
+  if (client.println() == 0)
+  {
+    Serial.println(F("Failed to get updates"));
+    return;
+  }
+
+  // Check HTTP status
+  char status[32] = {0};
+  client.readBytesUntil('\r', status, sizeof(status));
+  if (strcmp(status, "HTTP/1.1 200 OK") != 0)
+  {
+    Serial.print(F("Unexpected response: "));
+    Serial.println(status);
+    return;
+  }
+
+  // Skip HTTP headers
+  char endOfHeaders[] = "\r\n\r\n";
+  if (!client.find(endOfHeaders))
+  {
+    Serial.println(F("Invalid response"));
+    return;
+  }
+  DeserializationError error = deserializeJson(doc, client);
+  if (error)
+  {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.c_str());
+    return;
+  }
+
+  client.stop();
+}
+
+void sendMessage(String chat_id, String text)
+{
+  if (!client.connect(host, 3000))
+  {
+    Serial.println(F("Connection failed"));
+    return;
+  }
+
+  Serial.println(F("Connected!"));
+
+  // Send HTTP request
+  String url_line = "GET " + url_send +"?chat_id=" + chat_id + "&text="+text+" HTTP/1.0";
+  Serial.println(url_line);
+  client.println(url_line);
+  client.println(F("Host: 64.227.63.33"));
+  client.println(F("Connection: close"));
+  if (client.println() == 0)
+  {
+    Serial.println(F("Failed to send message"));
+    return;
+  }
+
+  // Check HTTP status
+  char status[32] = {0};
+  client.readBytesUntil('\r', status, sizeof(status));
+  if (strcmp(status, "HTTP/1.1 200 OK") != 0)
+  {
+    Serial.print(F("Unexpected response: "));
+    Serial.println(status);
+    return;
+  }
+
+  // Skip HTTP headers
+  char endOfHeaders[] = "\r\n\r\n";
+  if (!client.find(endOfHeaders))
+  {
+    Serial.println(F("Invalid response"));
+    return;
+  }
+  client.stop();
+}
+
+void loop()
+{
+  //так получать сообщения
+  //0 - значение update_id после которого выводить 
+  getMessages("0");
+
+  //так доставать все, что пришло
+  Serial.println(F("Response:"));
+  //doc - объект, в котором есть всё
+  Serial.println(doc["ok"].as<bool>());
+  Serial.println(doc["result"][0]["update_id"].as<long>());
+  String text = doc["result"][0]["message"]["text"].as<String>();
+  String id = doc["result"][0]["message"]["chat"]["id"].as<String>();
+  Serial.println(id);
+
+  //Изменить, чтобы писать другие сообщения
+ sendMessage(id, "ITMO");
+  delay(10000);
+  
+}
